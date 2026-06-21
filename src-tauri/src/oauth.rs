@@ -190,15 +190,22 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// Parse a stored keychain string into a [`TokenBundle`], mapping a missing or
+/// corrupt bundle into a clear `Err(String)` instead of leaking a raw serde
+/// error (and never panicking). Pure so the corrupt-bundle case can be
+/// unit-tested without the keychain.
+fn parse_stored_bundle(json: &str) -> Result<TokenBundle, String> {
+    serde_json::from_str::<TokenBundle>(json).map_err(|e| {
+        format!("stored OAuth token bundle is corrupt — sign in again ({e})")
+    })
+}
+
 /// Load a token bundle from the keychain, or `None` if not present.
 fn load_bundle(provider: &str) -> Result<Option<TokenBundle>, String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, &keychain_account(provider))
         .map_err(|e| e.to_string())?;
     match entry.get_password() {
-        Ok(json) => {
-            let bundle: TokenBundle = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-            Ok(Some(bundle))
-        }
+        Ok(json) => Ok(Some(parse_stored_bundle(&json)?)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.to_string()),
     }
@@ -351,6 +358,22 @@ struct TokenResponse {
     expires_in: Option<u64>,
 }
 
+/// Format a non-2xx token-endpoint failure into a clear `Err` string that carries
+/// both the HTTP status and the (possibly empty) response body. Pure so the
+/// wording/shape can be unit-tested without a live HTTP round-trip. `context` is
+/// the operation label, e.g. `"token exchange"` or `"token refresh"`.
+fn format_http_error(context: &str, status: u16, body: &str) -> String {
+    format!("{context} failed: HTTP {status}: {body}")
+}
+
+/// Parse a token-endpoint JSON body into a [`TokenResponse`], mapping any JSON
+/// error into a clear `Err(String)` (never a panic). Pure so parsing of a sample
+/// response body can be unit-tested without the network.
+fn parse_token_response(body: &str) -> Result<TokenResponse, String> {
+    serde_json::from_str::<TokenResponse>(body)
+        .map_err(|e| format!("failed to parse token response JSON: {e}"))
+}
+
 /// Exchange an authorization `code` for tokens.
 async fn exchange_code(
     cfg: &ProviderConfig,
@@ -373,12 +396,12 @@ async fn exchange_code(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("token exchange failed: HTTP {status}: {text}"));
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format_http_error("token exchange", status.as_u16(), &text));
     }
-    resp.json::<TokenResponse>().await.map_err(|e| e.to_string())
+    parse_token_response(&text)
 }
 
 /// Use a refresh token to mint a new access token.
@@ -398,12 +421,12 @@ async fn refresh_tokens(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("token refresh failed: HTTP {status}: {text}"));
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format_http_error("token refresh", status.as_u16(), &text));
     }
-    resp.json::<TokenResponse>().await.map_err(|e| e.to_string())
+    parse_token_response(&text)
 }
 
 /// Turn a [`TokenResponse`] into a persisted [`TokenBundle`], carrying over the
@@ -860,5 +883,133 @@ mod tests {
         // expires_at_unix == 0 means "unknown / never expires" => never refresh.
         let now = u64::MAX - 1;
         assert!(!bundle_needs_refresh(&bundle_expiring_at(0), now));
+    }
+
+    // -----------------------------------------------------------------------
+    // HTTP error formatting (non-2xx token endpoint responses)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn format_http_error_includes_status_and_body() {
+        let msg = format_http_error("token exchange", 400, r#"{"error":"invalid_grant"}"#);
+        assert!(msg.contains("token exchange failed"));
+        assert!(msg.contains("400"));
+        assert!(msg.contains("invalid_grant"));
+    }
+
+    #[test]
+    fn format_http_error_handles_empty_body() {
+        let msg = format_http_error("token refresh", 500, "");
+        assert!(msg.contains("token refresh failed"));
+        assert!(msg.contains("500"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Token-response parsing (from a sample JSON body, no network)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_token_response_reads_all_fields() {
+        let body = r#"{
+            "access_token": "at_123",
+            "refresh_token": "rt_456",
+            "id_token": "h.p.s",
+            "expires_in": 3600
+        }"#;
+        let resp = parse_token_response(body).expect("valid body should parse");
+        assert_eq!(resp.access_token, "at_123");
+        assert_eq!(resp.refresh_token.as_deref(), Some("rt_456"));
+        assert_eq!(resp.id_token.as_deref(), Some("h.p.s"));
+        assert_eq!(resp.expires_in, Some(3600));
+    }
+
+    #[test]
+    fn parse_token_response_tolerates_missing_optional_fields() {
+        // A refresh response that only carries a fresh access token.
+        let resp = parse_token_response(r#"{"access_token":"only"}"#)
+            .expect("access_token alone should parse");
+        assert_eq!(resp.access_token, "only");
+        assert!(resp.refresh_token.is_none());
+        assert!(resp.id_token.is_none());
+        assert!(resp.expires_in.is_none());
+    }
+
+    #[test]
+    fn parse_token_response_errs_on_missing_access_token() {
+        // access_token has no serde default => a clear error, not a panic.
+        // (TokenResponse is not Debug, so match instead of unwrap_err.)
+        match parse_token_response(r#"{"refresh_token":"x"}"#) {
+            Ok(_) => panic!("expected an error for missing access_token"),
+            Err(e) => assert!(e.contains("failed to parse token response JSON")),
+        }
+    }
+
+    #[test]
+    fn parse_token_response_errs_on_invalid_json() {
+        match parse_token_response("not json at all") {
+            Ok(_) => panic!("expected an error for invalid JSON"),
+            Err(e) => assert!(e.contains("failed to parse token response JSON")),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Stored-bundle parsing (corrupt keychain payloads must not panic)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_stored_bundle_reads_valid_json() {
+        let bundle = parse_stored_bundle(r#"{"access_token":"at","refresh_token":"rt"}"#)
+            .expect("valid bundle should parse");
+        assert_eq!(bundle.access_token, "at");
+        assert_eq!(bundle.refresh_token, "rt");
+    }
+
+    #[test]
+    fn parse_stored_bundle_errs_cleanly_on_corrupt_payload() {
+        // A truncated/garbage payload yields a clean, in-words error (no panic).
+        // (TokenBundle is not Debug, so match instead of unwrap_err.)
+        match parse_stored_bundle("{not-json") {
+            Ok(_) => panic!("expected a corrupt-bundle error"),
+            Err(e) => {
+                assert!(e.contains("corrupt"));
+                assert!(e.contains("sign in again"));
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // JWT decode must not panic on malformed input
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn decode_jwt_payload_errs_on_too_few_segments() {
+        let err = decode_jwt_payload("onlyonesegment").unwrap_err();
+        assert!(err.contains("well-formed JWT"));
+    }
+
+    #[test]
+    fn decode_jwt_payload_errs_on_bad_base64() {
+        // Two segments present, but the payload is not valid base64url.
+        let err = decode_jwt_payload("header.!!!notbase64!!!").unwrap_err();
+        assert!(err.contains("base64url-decode"));
+    }
+
+    #[test]
+    fn refresh_response_with_new_refresh_token_replaces_previous() {
+        let previous = TokenBundle {
+            access_token: "old".into(),
+            refresh_token: "refresh-old".into(),
+            expires_at_unix: 1,
+            account_id: "acct".into(),
+        };
+        // A refresh response that DOES carry a new refresh token.
+        let resp = parse_token_response(
+            r#"{"access_token":"new","refresh_token":"refresh-new","expires_in":3600}"#,
+        )
+        .unwrap();
+        let bundle = bundle_from_response(resp, Some(&previous));
+        assert_eq!(bundle.access_token, "new");
+        assert_eq!(bundle.refresh_token, "refresh-new"); // replaced
+        assert_eq!(bundle.account_id, "acct"); // carried over (no id_token)
     }
 }

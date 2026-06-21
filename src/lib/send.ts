@@ -8,7 +8,7 @@ import {
   helpText,
   parseCommand,
 } from "../data/commands";
-import { trumpError } from "./errors";
+import { trumpError, isOauthError } from "./errors";
 
 /** Handle a slash command locally. Returns true if it was a command. */
 function handleCommand(text: string): boolean {
@@ -92,7 +92,14 @@ export async function sendMessage(text: string): Promise<void> {
     );
     useChatStore.getState().endStream();
   } catch (e) {
-    const msg = trumpError("api", String(e));
+    // An OAuth failure (resolving/refreshing the subscription token) surfaces an
+    // in-character "sign in via Settings" message; everything else is an `api`
+    // error. When OAuth is the chosen auth mode, a token failure is the most
+    // likely cause, so treat it as OAuth.
+    const detail = String(e);
+    const kind =
+      authMode === "oauth" && isOauthError(detail) ? "oauth" : "api";
+    const msg = trumpError(kind, detail);
     const cur = useChatStore.getState();
     cur.appendToken((cur.messages.at(-1)?.content ? "\n\n" : "") + msg);
     cur.endStream();

@@ -58,3 +58,22 @@ test("codex decodes response.output_text.delta only", () => {
   expect(codex.decodeChunk({ type: "response.created" })).toBe("");
   expect(codex.decodeChunk({ type: "response.output_text.done" })).toBe("");
 });
+
+test("codex decodeChunk returns '' for a delta event missing the delta field", () => {
+  // type matches but no `delta` string present — must not throw, yields "".
+  expect(codex.decodeChunk({ type: "response.output_text.delta" })).toBe("");
+});
+
+test("codex decodeChunk ignores unknown / error event types", () => {
+  expect(codex.decodeChunk({ type: "response.error", error: { message: "boom" } })).toBe("");
+  expect(codex.decodeChunk({ type: "error" })).toBe("");
+  expect(codex.decodeChunk({ type: "some.future.event" })).toBe("");
+});
+
+test("codex decodeChunk does not throw on null / non-object / empty input", () => {
+  expect(codex.decodeChunk(null)).toBe("");
+  expect(codex.decodeChunk(undefined)).toBe("");
+  expect(codex.decodeChunk({})).toBe("");
+  expect(codex.decodeChunk("just a string")).toBe("");
+  expect(codex.decodeChunk(42)).toBe("");
+});
