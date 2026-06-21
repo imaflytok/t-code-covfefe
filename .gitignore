@@ -17,3 +17,4 @@ verify-*.png
 .env.local
 *.local
 app-*.png
+ci-installers/
