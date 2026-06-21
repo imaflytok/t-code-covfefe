@@ -16,3 +16,4 @@ verify-*.png
 .env
 .env.local
 *.local
+app-*.png

@@ -14,6 +14,10 @@ And while it thinks? Little ASCII Trumps. Thinking. Tremendously.
   <img src="assets/faces/set1_4.png" height="64" alt="going to be beautiful" />
 </p>
 
+<p align="center">
+  <img src="assets/screenshot.png" width="780" alt="Trump Code — the Mar-a-Lago Gold interface" />
+</p>
+
 > *"BELIEVE ME, NOBODY UNDERSTANDS CODE BETTER THAN I DO."* — Trump Code
 
 ---
