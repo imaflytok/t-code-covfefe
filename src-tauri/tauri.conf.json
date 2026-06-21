@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Trump Code",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.covfefe.trumpcode",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "Trump Code",
-        "width": 800,
-        "height": 600,
+        "width": 1180,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false
       }
