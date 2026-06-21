@@ -1,4 +1,5 @@
 mod chat;
+mod oauth;
 mod secrets;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +20,10 @@ pub fn run() {
             secrets::secret_set,
             secrets::secret_get,
             secrets::secret_delete,
+            oauth::oauth_start,
+            oauth::oauth_status,
+            oauth::oauth_logout,
+            oauth::oauth_access_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -64,10 +64,13 @@ export async function sendMessage(text: string): Promise<void> {
   const settings = useSettings.getState();
   const chat = useChatStore.getState();
   const key = settings.keys[settings.provider];
+  const authMode = settings.getAuthMode(settings.provider);
 
   chat.addUserMessage(text);
 
-  if (!key) {
+  // OAuth uses the keychain-stored subscription token (no API key needed);
+  // the API-key path still requires a key.
+  if (authMode !== "oauth" && !key) {
     chat.addAssistantMessage(trumpError("no-key"));
     return;
   }
@@ -78,13 +81,14 @@ export async function sendMessage(text: string): Promise<void> {
   try {
     await streamChat(
       settings.provider,
-      key,
+      key ?? "",
       {
         model: settings.model,
         system: buildSystemPrompt(),
         messages: history,
       },
       (t) => useChatStore.getState().appendToken(t),
+      authMode,
     );
     useChatStore.getState().endStream();
   } catch (e) {
