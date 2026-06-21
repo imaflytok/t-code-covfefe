@@ -18,3 +18,4 @@ verify-*.png
 *.local
 app-*.png
 ci-installers/
+.claude/
