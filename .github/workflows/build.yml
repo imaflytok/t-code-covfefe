@@ -19,8 +19,27 @@ jobs:
       - run: npm test -- --run
       - run: npm run build
 
+  rust-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
   bundle:
-    needs: test
+    needs: [test, rust-test]
     strategy:
       fail-fast: false
       matrix:
