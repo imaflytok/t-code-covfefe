@@ -22,6 +22,36 @@ And while it thinks? Little ASCII Trumps. Thinking. Tremendously.
 
 ---
 
+## 🇺🇸 How To Install It (The Best Instructions, Folks)
+
+Look, installing Trump Code is SO easy. So easy. We made it easy. Other apps? A disaster to install. Not this one.
+
+**Step 1 — Get it. → [Download here, the best download](https://github.com/imaflytok/t-code-covfefe/releases/latest)**
+
+Go to the Releases page — tremendous page, very downloadable — and grab the one for your machine:
+- 🪟 **Windows folks:** the `.exe` (or the `.msi`, also fantastic, you'll love it).
+- 🍎 **Mac folks** — Intel, Apple Silicon, ALL of them, ONE file, very efficient, very smart: the `_universal.dmg`.
+
+**Step 2 — Open it, and DON'T let them scare you.**
+
+Your computer pops up a warning. A total witch hunt. We didn't pay the "code-signing" people — a racket, frankly, the worst — so it pretends it doesn't know us. It knows us. Just get past it:
+- **Windows:** it says *"Windows protected your PC."* Click **More info → Run anyway.** Tremendous. Done.
+- **Mac:** right-click the app → **Open → Open.** And if it cries *"the app is damaged"* — IT IS NOT DAMAGED, that's FAKE NEWS — open Terminal and run this one time:
+
+```
+xattr -cr "/Applications/Trump Code.app"
+```
+
+Then open it. Beautiful. Works perfectly. Always did.
+
+**Step 3 — Bring your key.**
+
+Open **⚙ Settings**, pick your provider, paste your API key. We lock it in your OS keychain — very secure, maybe the most secure, people are amazed. Now go make code great again. 🇺🇸
+
+> Not a developer? Then you're DONE. You don't build it, you just RUN it. Winning.
+
+---
+
 ## 🏆 Tremendous Features
 
 - **Multi-provider, no favorites (well, a few).** OpenAI, Anthropic (Claude), and xAI (Grok). You bring the key, we bring the winning.
@@ -48,9 +78,9 @@ And while it thinks? Little ASCII Trumps. Thinking. Tremendously.
 
 ---
 
-## 🚀 Install & Build
+## 🚀 Build From Source (for developers)
 
-You need **Node 18+** and the **Rust toolchain** ([rustup.rs](https://rustup.rs)).
+*(Just want to use it? Scroll up — grab the installer. This part's for building it yourself.)* You need **Node 18+** and the **Rust toolchain** ([rustup.rs](https://rustup.rs)).
 
 ```bash
 git clone https://github.com/imaflytok/t-code-covfefe.git
