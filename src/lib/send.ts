@@ -92,6 +92,7 @@ export async function sendMessage(text: string): Promise<void> {
     );
     useChatStore.getState().endStream();
   } catch (e) {
+    console.error("[trump-code] request failed:", e);
     // An OAuth failure (resolving/refreshing the subscription token) surfaces an
     // in-character "sign in via Settings" message; everything else is an `api`
     // error. When OAuth is the chosen auth mode, a token failure is the most

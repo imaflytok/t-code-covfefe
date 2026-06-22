@@ -1,0 +1,65 @@
+name: release
+
+# Cut a release by pushing a version tag, e.g.:  git tag v0.1.1 && git push origin v0.1.1
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Universal macOS binary — runs on BOTH Intel and Apple Silicon.
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: windows-latest
+            args: ""
+            rust_targets: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Code signing (optional) — set these as repo secrets to ship signed/notarized builds ---
+          # macOS:
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Trump Code ${{ github.ref_name }} — Make Code Great Again"
+          releaseBody: |
+            **Download the installer for your platform, then add your API key (OpenAI / Anthropic / xAI) in Settings.**
+
+            - 🪟 **Windows 10/11** — `.msi` or `.exe`. SmartScreen → **More info → Run anyway** (unsigned).
+            - 🍎 **macOS (universal — Intel + Apple Silicon)** — `.dmg`. First launch: **right-click → Open → Open**; if it says "damaged", run `xattr -cr "/Applications/Trump Code.app"`.
+
+            Open ⚙ Settings → pick a provider → paste your API key (stored in your OS keychain) → go.
+
+            > Installers are **unsigned**, so the one-time security warnings above are expected.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

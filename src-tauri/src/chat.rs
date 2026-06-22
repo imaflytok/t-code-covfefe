@@ -20,10 +20,13 @@ pub async fn chat_stream(args: ChatArgs, on_event: Channel<String>) -> Result<()
         req = req.header(k, v);
     }
 
+    eprintln!("[chat] request url: {}", args.url);
     let resp = req.send().await.map_err(|e| e.to_string())?;
+    eprintln!("[chat] response status: {}", resp.status());
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        eprintln!("[chat] request FAILED: status={status} body={text}");
         return Err(format!("HTTP {status}: {text}"));
     }
 

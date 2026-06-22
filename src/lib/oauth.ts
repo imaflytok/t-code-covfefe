@@ -1,6 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ProviderId } from "../types";
 
+/** OAuth needs the native Tauri backend; a plain browser tab has no IPC bridge. */
+function inTauri(): boolean {
+  return (
+    typeof (window as unknown as { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__ !== "undefined"
+  );
+}
+
+const NOT_DESKTOP =
+  "OAuth sign-in only works in the Trump Code desktop app, not a browser tab. Launch the app (npm run tauri dev) and use its window.";
+
 /**
  * Thin TS wrappers over the Rust OAuth commands defined in
  * `src-tauri/src/oauth.rs`. The Rust core owns the loopback PKCE flow, the
@@ -27,16 +38,19 @@ export interface OAuthAccessToken {
  * Rejects if the user cancels or the exchange fails.
  */
 export async function startOauth(provider: ProviderId): Promise<void> {
+  if (!inTauri()) throw new Error(NOT_DESKTOP);
   await invoke("oauth_start", { provider });
 }
 
 /** Return whether a stored OAuth bundle exists for `provider`. */
 export async function oauthStatus(provider: ProviderId): Promise<boolean> {
+  if (!inTauri()) return false; // browser/dev fallback: never "connected"
   return invoke<boolean>("oauth_status", { provider });
 }
 
 /** Delete the stored OAuth bundle for `provider` (no-op if absent). */
 export async function oauthLogout(provider: ProviderId): Promise<void> {
+  if (!inTauri()) return;
   await invoke("oauth_logout", { provider });
 }
 
@@ -47,5 +61,6 @@ export async function oauthLogout(provider: ProviderId): Promise<void> {
 export async function getAccessToken(
   provider: ProviderId,
 ): Promise<OAuthAccessToken> {
+  if (!inTauri()) throw new Error(NOT_DESKTOP);
   return invoke<OAuthAccessToken>("oauth_access_token", { provider });
 }

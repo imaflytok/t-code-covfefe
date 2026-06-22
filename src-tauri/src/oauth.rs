@@ -390,6 +390,10 @@ async fn exchange_code(
         ("client_id", cfg.client_id),
         ("code_verifier", code_verifier),
     ];
+    eprintln!(
+        "[oauth] token exchange: provider client_id={} token_url={}",
+        cfg.client_id, cfg.token_url
+    );
     let resp = client
         .post(cfg.token_url)
         .form(&form)
@@ -397,8 +401,10 @@ async fn exchange_code(
         .await
         .map_err(|e| e.to_string())?;
     let status = resp.status();
+    eprintln!("[oauth] token exchange response status: {status}");
     let text = resp.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
+        eprintln!("[oauth] token exchange FAILED: status={status} body={text}");
         return Err(format_http_error("token exchange", status.as_u16(), &text));
     }
     parse_token_response(&text)
@@ -415,6 +421,10 @@ async fn refresh_tokens(
         ("refresh_token", refresh_token),
         ("client_id", cfg.client_id),
     ];
+    eprintln!(
+        "[oauth] token refresh: provider client_id={} token_url={}",
+        cfg.client_id, cfg.token_url
+    );
     let resp = client
         .post(cfg.token_url)
         .form(&form)
@@ -422,8 +432,10 @@ async fn refresh_tokens(
         .await
         .map_err(|e| e.to_string())?;
     let status = resp.status();
+    eprintln!("[oauth] token refresh response status: {status}");
     let text = resp.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
+        eprintln!("[oauth] token refresh FAILED: status={status} body={text}");
         return Err(format_http_error("token refresh", status.as_u16(), &text));
     }
     parse_token_response(&text)
@@ -481,7 +493,9 @@ pub async fn oauth_start(provider: String) -> Result<(), String> {
     };
     let listener = TcpListener::bind(&bind_addr)
         .map_err(|e| format!("failed to bind loopback {bind_addr}: {e}"))?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let local_addr = listener.local_addr().map_err(|e| e.to_string())?;
+    let port = local_addr.port();
+    eprintln!("[oauth] bound loopback listener at {local_addr} (provider={provider})");
     // redirect_uri uses `localhost` (not 127.0.0.1) to match the registered URI.
     let redirect_uri = format!("http://localhost:{port}{}", cfg.redirect_path);
 
@@ -492,6 +506,7 @@ pub async fn oauth_start(provider: String) -> Result<(), String> {
 
     // 3. Build the authorize URL.
     let url = build_authorize_url(&cfg, &redirect_uri, &state, &code_challenge);
+    eprintln!("[oauth] authorize url: {url}");
 
     // 4. Open the browser.
     open::that(&url).map_err(|e| format!("failed to open browser: {e}"))?;
@@ -503,13 +518,24 @@ pub async fn oauth_start(provider: String) -> Result<(), String> {
         .map_err(|e| format!("callback task panicked: {e}"))??;
 
     // 6. Validate state (CSRF protection).
-    if callback.state != state {
+    let state_match = callback.state == state;
+    let masked_code: String = callback.code.chars().take(6).collect();
+    eprintln!(
+        "[oauth] callback received: state_match={state_match} code={masked_code}... (len={})",
+        callback.code.len()
+    );
+    if !state_match {
         return Err("OAuth state mismatch — aborting (possible CSRF)".to_string());
     }
 
     // 7. Exchange the code for tokens and persist.
     let token_resp = exchange_code(&cfg, &callback.code, &redirect_uri, &code_verifier).await?;
     let bundle = bundle_from_response(token_resp, None);
+    eprintln!(
+        "[oauth] token exchange success: provider={provider} access_token={}... account_id_present={}",
+        bundle.access_token.chars().take(12).collect::<String>(),
+        !bundle.account_id.is_empty()
+    );
     save_bundle(&provider, &bundle)?;
 
     Ok(())
@@ -553,6 +579,11 @@ pub async fn oauth_access_token(provider: String) -> Result<AccessToken, String>
         }
         let token_resp = refresh_tokens(&cfg, &bundle.refresh_token).await?;
         let refreshed = bundle_from_response(token_resp, Some(&bundle));
+        eprintln!(
+            "[oauth] token refresh success: provider={provider} access_token={}... account_id_present={}",
+            refreshed.access_token.chars().take(12).collect::<String>(),
+            !refreshed.account_id.is_empty()
+        );
         save_bundle(&provider, &refreshed)?;
         return Ok(AccessToken {
             access_token: refreshed.access_token,
